@@ -697,12 +697,12 @@ int blosc2_schunk_insert_chunk(blosc2_schunk *schunk, int nchunk, uint8_t *chunk
     }
   }
 
-  if (copy) {
+  //if (copy) {
     // Make a copy of the chunk
     uint8_t *chunk_copy = malloc(chunk_cbytes);
     memcpy(chunk_copy, chunk, chunk_cbytes);
     chunk = chunk_copy;
-  }
+  //}
 
   // Update super-chunk or frame
   blosc2_frame_s* frame = (blosc2_frame_s*)schunk->frame;
@@ -794,12 +794,12 @@ int blosc2_schunk_update_chunk(blosc2_schunk *schunk, int nchunk, uint8_t *chunk
     free(chunk_old);
   }
 
-  if (copy) {
+  //if (copy) {
     // Make a copy of the chunk
     uint8_t *chunk_copy = malloc(chunk_cbytes);
     memcpy(chunk_copy, chunk, chunk_cbytes);
     chunk = chunk_copy;
-  }
+  //}
 
   blosc2_frame_s* frame = (blosc2_frame_s*)(schunk->frame);
   if (schunk->frame == NULL) {
@@ -1334,7 +1334,10 @@ int blosc2_vlmeta_add(blosc2_schunk *schunk, const char *name, uint8_t *content,
   }
   blosc2_free_ctx(cctx);
 
-  vlmetalayer->content = realloc(content_buf, csize);
+  uint8_t *vlmetalayer_content = malloc(csize);
+  memcpy(vlmetalayer_content, content_buf, csize);
+  free(vlmetalayer->content);
+  vlmetalayer->content = vlmetalayer_content;
   vlmetalayer->content_len = csize;
   schunk->vlmetalayers[schunk->nvlmetalayers] = vlmetalayer;
   schunk->nvlmetalayers += 1;
@@ -1402,7 +1405,10 @@ int blosc2_vlmeta_update(blosc2_schunk *schunk, const char *name, uint8_t *conte
   }
   blosc2_free_ctx(cctx);
 
-  vlmetalayer->content = realloc(content_buf, csize);
+  uint8_t *vlmetalayer_content = malloc(csize);
+  memcpy(vlmetalayer_content, content_buf, csize);
+  free(vlmetalayer->content);
+  vlmetalayer->content = vlmetalayer_content;
   vlmetalayer->content_len = csize;
 
   // Propagate to frames
