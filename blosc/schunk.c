@@ -1406,7 +1406,6 @@ int blosc2_vlmeta_update(blosc2_schunk *schunk, const char *name, uint8_t *conte
 
   uint8_t *vlmetalayer_content = malloc(csize);
   memcpy(vlmetalayer_content, content_buf, csize);
-  free(vlmetalayer->content);
   vlmetalayer->content = vlmetalayer_content;
   vlmetalayer->content_len = csize;
 
