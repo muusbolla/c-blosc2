@@ -17,6 +17,8 @@
 #include <assert.h>
 #include <math.h>
 
+#include <x86intrin.h>
+
 #include "blosc2.h"
 #include "blosc-private.h"
 #include "frame.h"
@@ -1777,62 +1779,211 @@ static int serial_blosc(struct thread_context* thread_context) {
   uint8_t* tmp2 = thread_context->tmp2;
   int dict_training = context->use_dict && (context->dict_cdict == NULL);
   bool memcpyed = context->header_flags & (uint8_t)BLOSC_MEMCPYED;
-  if (!context->do_compress && context->special_type) {
-    // Fake a runlen as if it was a memcpyed chunk
-    memcpyed = true;
-  }
-
-  for (j = 0; j < context->nblocks; j++) {
-    if (context->do_compress && !memcpyed && !dict_training) {
-      _sw32(bstarts + j, ntbytes);
-    }
-    bsize = context->blocksize;
-    leftoverblock = 0;
-    if ((j == context->nblocks - 1) && (context->leftover > 0)) {
-      bsize = context->leftover;
-      leftoverblock = 1;
-    }
-    if (context->do_compress) {
+  if (context->do_compress)
+  {
+    for (j = 0; j < context->nblocks; j++) {
+      if (!memcpyed && !dict_training) {
+        _sw32(bstarts + j, ntbytes);
+      }
+      bsize = context->blocksize;
+      leftoverblock = 0;
+      if ((j == context->nblocks - 1) && (context->leftover > 0)) {
+        bsize = context->leftover;
+        leftoverblock = 1;
+      }
       if (memcpyed && !context->prefilter) {
         /* We want to memcpy only */
         memcpy(context->dest + context->header_overhead + j * context->blocksize,
-               context->src + j * context->blocksize, (unsigned int)bsize);
+              context->src + j * context->blocksize, (unsigned int)bsize);
         cbytes = (int32_t)bsize;
       }
       else {
         /* Regular compression */
         cbytes = blosc_c(thread_context, bsize, leftoverblock, ntbytes,
-                         context->destsize, context->src, j * context->blocksize,
-                         context->dest + ntbytes, tmp, tmp2);
+                        context->destsize, context->src, j * context->blocksize,
+                        context->dest + ntbytes, tmp, tmp2);
         if (cbytes == 0) {
-          ntbytes = 0;              /* uncompressible data */
-          break;
+          return 0;              /* uncompressible data */
         }
       }
+
+      if (cbytes < 0) {
+        return cbytes;
+      }
+      ntbytes += cbytes;
     }
-    else {
-      /* Regular decompression */
+
+    return ntbytes;
+  } else { // decompress
+    if (context->special_type) {
+      // Fake a runlen as if it was a memcpyed chunk
+      memcpyed = true;
+    }
+    int32_t nblocks = context->nblocks;
+    int32_t leftover = context->leftover;
+    int32_t i = 0;
+    bsize = context->blocksize;
+    for (; i < (nblocks - 1)/64; ++i) { // subtract 1 to handle case where there are full 64 blocks, but last one is leftover
+      uint64_t maskout = context->block_maskout[i]; 
+      if(maskout == 0xFFFFFFFFFFFFFFFFULL) { // skip 64 in a row
+        ntbytes += bsize * 64;
+      } else if (maskout == 0) { // decompress 64 in a row
+        for (j = 0; j < 64; j++) {
+          int32_t nblock = i * 64 + j;
+          /* Regular decompression */
+          // If memcpyed we don't have a bstarts section (because it is not needed)
+          int32_t src_offset = memcpyed ?
+              context->header_overhead + nblock * context->blocksize : sw32_(bstarts + nblock);
+          cbytes = blosc_d(thread_context, bsize, 0, memcpyed,
+                        context->src, context->srcsize, src_offset, nblock,
+                        context->dest, nblock * context->blocksize, tmp, tmp2);
+          if (cbytes < 0) {
+            return cbytes;         /* error in blosc_d */
+          }
+
+          ntbytes += cbytes;
+        }
+      } else {
+        int64_t num_skipped = _mm_popcnt_u64(maskout); // count the number of 1s (skipped blocks)
+        ntbytes += bsize * num_skipped; // pretend that we decompressed them all successfully
+
+        maskout = ~maskout; // invert so that 1 = decompress, 0 = skip
+        j = _mm_tzcnt_64(maskout); // find the index of the first block to decompress
+        do {
+          int32_t nblock = i * 64 + j;
+          /* Regular decompression */
+          // If memcpyed we don't have a bstarts section (because it is not needed)
+          int32_t src_offset = memcpyed ?
+              context->header_overhead + nblock * context->blocksize : sw32_(bstarts + nblock);
+          cbytes = blosc_d(thread_context, bsize, 0, memcpyed,
+                        context->src, context->srcsize, src_offset, nblock,
+                        context->dest, nblock * context->blocksize, tmp, tmp2);
+          if (cbytes < 0) {
+            return cbytes;         /* error in blosc_d */
+          }
+
+          ntbytes += cbytes;
+
+          maskout = _blsr_u64(maskout);
+          j = _mm_tzcnt_64(maskout); // find the index of the next block to decompress
+        } while (maskout != 0);
+      }
+    }
+    // handle last set of blocks
+    // maybe less than 64 bits in the maskout
+    // maybe the very last block is smaller (leftover)
+    int32_t remainingBlocks = nblocks - (i * 64);
+    uint64_t maskout = context->block_maskout[i];
+    
+    // done this way to avoid overflow when remainingBlocks == 64
+    uint64_t remainingMask = ((1ULL << (remainingBlocks - 1)) - 1) | (1ULL << (remainingBlocks - 1)); 
+
+    if(maskout == remainingMask) { // skip all remaining
+      ntbytes += bsize * remainingBlocks;
+    } else if (maskout == 0) { // decompress all remaining
+      for (j = 0; j < remainingBlocks; j++) {
+        int32_t nblock = i * 64 + j;
+        /* Regular decompression */
+        if (j == remainingBlocks - 1) { // handle very last block being smaller (leftover data)
+          leftoverblock = 0;
+          if (leftover > 0) {
+            bsize = leftover;
+            leftoverblock = 1;
+          }
+        }
+        
+        // If memcpyed we don't have a bstarts section (because it is not needed)
+        int32_t src_offset = memcpyed ?
+            context->header_overhead + nblock * context->blocksize : sw32_(bstarts + nblock);
+        cbytes = blosc_d(thread_context, bsize, leftoverblock, memcpyed,
+                      context->src, context->srcsize, src_offset, nblock,
+                      context->dest, nblock * context->blocksize, tmp, tmp2);
+        if (cbytes < 0) {
+          return cbytes;         /* error in blosc_d */
+        }
+
+        ntbytes += cbytes;
+      }
+    } else {
+      int64_t num_skipped = _mm_popcnt_u64(maskout); // count the number of 1s (skipped blocks)
+      ntbytes += bsize * num_skipped; // pretend that we decompressed them all successfully
+
+      maskout = ~maskout; // invert so that 1 = decompress, 0 = skip
+      j = _mm_tzcnt_64(maskout); // find the index of the first block to decompress
+      do {
+        int32_t nblock = i * 64 + j;
+        maskout = _blsr_u64(maskout);
+        
+        if (maskout == 0) { // handle very last block being smaller (leftover data)
+          leftoverblock = 0;
+          if (leftover > 0) {
+            bsize = leftover;
+            leftoverblock = 1;
+          }
+        }
+
+        /* Regular decompression */
+        // If memcpyed we don't have a bstarts section (because it is not needed)
+        int32_t src_offset = memcpyed ?
+            context->header_overhead + nblock * context->blocksize : sw32_(bstarts + nblock);
+        cbytes = blosc_d(thread_context, bsize, 0, memcpyed,
+                      context->src, context->srcsize, src_offset, nblock,
+                      context->dest, nblock * context->blocksize, tmp, tmp2);
+        if (cbytes < 0) {
+          return cbytes;         /* error in blosc_d */
+        }
+
+        ntbytes += cbytes;
+
+        j = _mm_tzcnt_64(maskout); // find the index of the next block to decompress
+      } while (maskout != 0);
+    }
+
+    // for (j = 0; j < nblocks - 1; j++) {
+    //   /* Regular decompression */
+    //   if (context->block_maskout != NULL && (context->block_maskout[j / 64] & (1ULL << (j % 64)))) {
+    //     // Do not decompress, but act as if we successfully decompressed everything
+    //     cbytes = bsize;
+    //   } else {
+    //     // If memcpyed we don't have a bstarts section (because it is not needed)
+    //     int32_t src_offset = memcpyed ?
+    //         context->header_overhead + j * context->blocksize : sw32_(bstarts + j);
+    //     cbytes = blosc_d(thread_context, bsize, 0, memcpyed,
+    //                   context->src, context->srcsize, src_offset, j,
+    //                   context->dest, j * context->blocksize, tmp, tmp2);
+    //     if (cbytes < 0) {
+    //       return cbytes;         /* error in blosc_d */
+    //     }
+    //   }
+
+    //   ntbytes += cbytes;
+    // }
+
+    leftoverblock = 0;
+    if (leftover > 0) {
+      bsize = leftover;
+      leftoverblock = 1;
+    }
+    /* Regular decompression */
+    if (context->block_maskout != NULL && (context->block_maskout[j / 64] & (1ULL << (j % 64)))) {
+      // Do not decompress, but act as if we successfully decompressed everything
+      cbytes = bsize;
+    } else {
       // If memcpyed we don't have a bstarts section (because it is not needed)
       int32_t src_offset = memcpyed ?
           context->header_overhead + j * context->blocksize : sw32_(bstarts + j);
-      if (context->block_maskout != NULL && (context->block_maskout[j / 64] & (1ULL << (j % 64)))) {
-        // Do not decompress, but act as if we successfully decompressed everything
-        cbytes = bsize;
-      } else {
-        cbytes = blosc_d(thread_context, bsize, leftoverblock, memcpyed,
-                       context->src, context->srcsize, src_offset, j,
-                       context->dest, j * context->blocksize, tmp, tmp2);
+      cbytes = blosc_d(thread_context, bsize, leftoverblock, memcpyed,
+                    context->src, context->srcsize, src_offset, j,
+                    context->dest, j * context->blocksize, tmp, tmp2);
+      if (cbytes < 0) {
+        return cbytes;         /* error in blosc_d */
       }
     }
 
-    if (cbytes < 0) {
-      ntbytes = cbytes;         /* error in blosc_c or blosc_d */
-      break;
-    }
     ntbytes += cbytes;
-  }
 
-  return ntbytes;
+    return ntbytes;
+  }
 }
 
 static void t_blosc_do_job(void *ctxt);
@@ -2851,23 +3002,21 @@ int _blosc_getitem(blosc2_context* context, blosc_header* header, const void* sr
     bool get_single_block = ((startb == 0) && (bsize == nitems * header->typesize));
     uint8_t* tmp2 = get_single_block ? dest : scontext->tmp2;
 
-    // If memcpyed we don't have a bstarts section (because it is not needed)
-    int32_t src_offset = memcpyed ?
-      context->header_overhead + j * bsize : sw32_(context->bstarts + j);
     int cbytes;
     if (context->block_maskout != NULL && (context->block_maskout[j / 64] & (1ULL << (j % 64)))) {
       // Do not decompress, but act as if we successfully decompressed everything
       cbytes = bsize;
     } else {
+      // If memcpyed we don't have a bstarts section (because it is not needed)
+      int32_t src_offset = memcpyed ? context->header_overhead + j * bsize : sw32_(context->bstarts + j);
       cbytes = blosc_d(context->serial_context, bsize, leftoverblock, memcpyed,
                          src, srcsize, src_offset, j,
                          tmp2, 0, scontext->tmp, scontext->tmp3);
+      if (cbytes < 0) {
+        return cbytes; // this is an error code
+      }
     }
-    
-    if (cbytes < 0) {
-      ntbytes = cbytes;
-      break;
-    }
+
     if (!get_single_block) {
       /* Copy to destination */
       memcpy((uint8_t *) dest + ntbytes, tmp2 + startb, (unsigned int) bsize2);
@@ -3057,13 +3206,13 @@ static void t_blosc_do_job(void *ctxt)
         cbytes = -1;
       }
       else {
-        // If memcpyed we don't have a bstarts section (because it is not needed)
-        int32_t src_offset = memcpyed ?
-            context->header_overhead + nblock_ * blocksize : sw32_(bstarts + nblock_);
         if (context->block_maskout != NULL && (context->block_maskout[nblock_ / 64] & (1ULL << (nblock_ % 64)))) {
           // Do not decompress, but act as if we successfully decompressed everything
           cbytes = bsize;
         } else {
+          // If memcpyed we don't have a bstarts section (because it is not needed)
+          int32_t src_offset = memcpyed ?
+              context->header_overhead + nblock_ * blocksize : sw32_(bstarts + nblock_);
           cbytes = blosc_d(thcontext, bsize, leftoverblock, memcpyed,
                           src, srcsize, src_offset, nblock_,
                           dest, nblock_ * blocksize, tmp, tmp2);
