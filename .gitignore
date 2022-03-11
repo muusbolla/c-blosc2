@@ -3,3 +3,5 @@ build*
 .idea
 cmake-build-*
 /doc/doxygen/xml/
+blosc/config.h
+internal-complibs/zlib-ng-2.0.5/zconf.h
