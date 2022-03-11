@@ -93,9 +93,9 @@ static uint8_t *get_run_16(uint8_t *ip, const uint8_t *ip_bound, const uint8_t *
   while (ip < (ip_bound - sizeof(__m128i))) {
     __m128i value, value2, cmp;
     /* Broadcast the value for every byte in a 128-bit register */
-    memset(&value, x, sizeof(__m128i));
+    value = _mm_set1_epi8(x);
     value2 = _mm_loadu_si128((__m128i *)ref);
-    cmp = _mm_cmpeq_epi32(value, value2);
+    cmp = _mm_cmpeq_epi8(value, value2);
     if (_mm_movemask_epi8(cmp) != 0xFFFF) {
       /* Return the byte that starts to differ */
       while (*ref++ == x) ip++;
