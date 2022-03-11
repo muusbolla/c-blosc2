@@ -1458,11 +1458,6 @@ static int blosc_d(
     return rc;
   }
 
-  if (context->block_maskout != NULL && context->block_maskout[nblock]) {
-    // Do not decompress, but act as if we successfully decompressed everything
-    return bsize;
-  }
-
   // In some situations (lazychunks) the context can arrive uninitialized
   // (but BITSHUFFLE needs it for accessing the format of the chunk)
   if (context->src == NULL) {
@@ -1820,9 +1815,14 @@ static int serial_blosc(struct thread_context* thread_context) {
       // If memcpyed we don't have a bstarts section (because it is not needed)
       int32_t src_offset = memcpyed ?
           context->header_overhead + j * context->blocksize : sw32_(bstarts + j);
-      cbytes = blosc_d(thread_context, bsize, leftoverblock, memcpyed,
+      if (context->block_maskout != NULL && (context->block_maskout[j / 64] & (1ULL << (j % 64)))) {
+        // Do not decompress, but act as if we successfully decompressed everything
+        cbytes = bsize;
+      } else {
+        cbytes = blosc_d(thread_context, bsize, leftoverblock, memcpyed,
                        context->src, context->srcsize, src_offset, j,
                        context->dest, j * context->blocksize, tmp, tmp2);
+      }
     }
 
     if (cbytes < 0) {
@@ -2854,10 +2854,16 @@ int _blosc_getitem(blosc2_context* context, blosc_header* header, const void* sr
     // If memcpyed we don't have a bstarts section (because it is not needed)
     int32_t src_offset = memcpyed ?
       context->header_overhead + j * bsize : sw32_(context->bstarts + j);
-
-    int cbytes = blosc_d(context->serial_context, bsize, leftoverblock, memcpyed,
+    int cbytes;
+    if (context->block_maskout != NULL && (context->block_maskout[j / 64] & (1ULL << (j % 64)))) {
+      // Do not decompress, but act as if we successfully decompressed everything
+      cbytes = bsize;
+    } else {
+      cbytes = blosc_d(context->serial_context, bsize, leftoverblock, memcpyed,
                          src, srcsize, src_offset, j,
                          tmp2, 0, scontext->tmp, scontext->tmp3);
+    }
+    
     if (cbytes < 0) {
       ntbytes = cbytes;
       break;
@@ -3054,9 +3060,15 @@ static void t_blosc_do_job(void *ctxt)
         // If memcpyed we don't have a bstarts section (because it is not needed)
         int32_t src_offset = memcpyed ?
             context->header_overhead + nblock_ * blocksize : sw32_(bstarts + nblock_);
-        cbytes = blosc_d(thcontext, bsize, leftoverblock, memcpyed,
+        if (context->block_maskout != NULL && (context->block_maskout[nblock_ / 64] & (1ULL << (nblock_ % 64)))) {
+          // Do not decompress, but act as if we successfully decompressed everything
+          cbytes = bsize;
+        } else {
+          cbytes = blosc_d(thcontext, bsize, leftoverblock, memcpyed,
                           src, srcsize, src_offset, nblock_,
                           dest, nblock_ * blocksize, tmp, tmp2);
+        }
+        
       }
     }
 
@@ -3725,10 +3737,29 @@ int blosc2_set_maskout(blosc2_context *ctx, bool *maskout, int nblocks) {
     // Get rid of a possible mask here
     free(ctx->block_maskout);
   }
-
-  bool *maskout_ = malloc(nblocks);
+  int nmaskoutbits = (nblocks + 63) & (-64); // round up to next multiple of 64
+  int nmaskoutelems = nmaskoutbits / 64;
+  uint64_t *maskout_ = calloc(nmaskoutelems, 8);
   BLOSC_ERROR_NULL(maskout_, BLOSC2_ERROR_MEMORY_ALLOC);
-  memcpy(maskout_, maskout, nblocks);
+
+  int i = 0;
+  int outIdx = 0;
+  for(; i < nblocks - 64; i += 64) {
+    uint64_t val = 0;
+    for(int j = 0; j < 64; ++j) {
+      val |= ((uint64_t)(maskout[i + j] != 0)) << j;
+    }
+    maskout_[outIdx] = val;
+    ++outIdx;
+  }
+  
+  uint64_t val2 = 0;
+  for(int j = 0; i + j < nblocks; ++j) {
+    val2 |= ((uint64_t)(maskout[i+j] != 0)) << j;
+  }
+  maskout_[outIdx] = val2;
+  
+
   ctx->block_maskout = maskout_;
   ctx->block_maskout_nitems = nblocks;
 

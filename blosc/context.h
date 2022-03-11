@@ -98,11 +98,11 @@ struct blosc2_context_s {
   /* prefilter params */
   blosc2_postfilter_params *postparams;
   /* postfilter params */
-  bool* block_maskout;
-  /* The blocks that are not meant to be decompressed.
+  uint64_t* block_maskout;
+  /* A bitmask of the blocks that are not meant to be decompressed.
    * If NULL (default), all blocks in a chunk should be read. */
   int block_maskout_nitems;
-  /* The number of items in block_maskout array (must match
+  /* The number of items (bits) in block_maskout array (must match
    * the number of blocks in chunk) */
   blosc2_schunk* schunk;
   /* Associated super-chunk (if available) */
