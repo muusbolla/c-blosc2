@@ -107,7 +107,7 @@ static char* test_update_chunk(void) {
 
     // Update a random position
     int pos = rand() % schunk->nchunks;
-    int _nchunks = blosc2_schunk_update_chunk(schunk, pos, chunk, true);
+    int _nchunks = blosc2_schunk_update_chunk(schunk, pos, chunk);
     mu_assert("ERROR: chunk cannot be updated correctly", _nchunks > 0);
     free(chunk);
 

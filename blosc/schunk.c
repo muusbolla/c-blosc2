@@ -760,7 +760,7 @@ int blosc2_schunk_insert_chunk(blosc2_schunk *schunk, int nchunk, uint8_t *chunk
 }
 
 
-int blosc2_schunk_update_chunk(blosc2_schunk *schunk, int nchunk, uint8_t *chunk, bool copy) {
+int blosc2_schunk_update_chunk(blosc2_schunk *schunk, int nchunk, uint8_t *chunk) {
   int32_t chunk_nbytes;
   int32_t chunk_cbytes;
 
@@ -803,13 +803,6 @@ int blosc2_schunk_update_chunk(blosc2_schunk *schunk, int nchunk, uint8_t *chunk
     free(chunk_old);
   }
 
-  if (copy) {
-    // Make a copy of the chunk
-    uint8_t *chunk_copy = malloc(chunk_cbytes);
-    memcpy(chunk_copy, chunk, chunk_cbytes);
-    chunk = chunk_copy;
-  }
-
   blosc2_frame_s* frame = (blosc2_frame_s*)(schunk->frame);
   if (schunk->frame == NULL) {
     /* Update counters */
@@ -848,18 +841,18 @@ int blosc2_schunk_update_chunk(blosc2_schunk *schunk, int nchunk, uint8_t *chunk
 
   // Update super-chunk or frame
   if (schunk->frame == NULL) {
-    if (!copy && (chunk_cbytes < chunk_nbytes)) {
-      // We still want to do a shrink of the chunk
-      chunk = realloc(chunk, chunk_cbytes);
-    }
-
     // Free old chunk and add reference to new chunk
     if (schunk->data[nchunk] != 0) {
       free(schunk->data[nchunk]);
     }
-    schunk->data[nchunk] = chunk;
+
+    // Make a copy of the entire chunk
+    uint8_t *chunk_copy = malloc(chunk_cbytes);
+    memcpy(chunk_copy, chunk, chunk_cbytes);
+    schunk->data[nchunk] = chunk_copy;
   }
   else {
+    // chunk will be memcpyed internally
     if (frame_update_chunk(frame, nchunk, chunk, schunk) == NULL) {
         BLOSC_TRACE_ERROR("Problems updating a chunk in a frame.");
         return BLOSC2_ERROR_CHUNK_UPDATE;

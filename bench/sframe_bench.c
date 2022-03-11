@@ -81,7 +81,7 @@ void test_update(blosc2_schunk* schunk_sframe, blosc2_schunk* schunk_cframe) {
     }
     // Sframe
     blosc_set_timestamp(&current);
-    _nchunks = blosc2_schunk_update_chunk(schunk_sframe, update_chunks[i], chunk, true);
+    _nchunks = blosc2_schunk_update_chunk(schunk_sframe, update_chunks[i], chunk);
     blosc_set_timestamp(&last);
     if (_nchunks < 0){
       printf("ERROR: chunk cannot be updated correctly\n");
@@ -90,7 +90,7 @@ void test_update(blosc2_schunk* schunk_sframe, blosc2_schunk* schunk_cframe) {
 
     // Frame
     blosc_set_timestamp(&current);
-    _nchunks = blosc2_schunk_update_chunk(schunk_cframe, update_chunks[i], chunk, true);
+    _nchunks = blosc2_schunk_update_chunk(schunk_cframe, update_chunks[i], chunk);
     blosc_set_timestamp(&last);
     free(chunk);
     if (_nchunks <= 0){
@@ -156,7 +156,7 @@ void test_insert(blosc2_schunk* schunk_sframe, blosc2_schunk* schunk_cframe) {
 
     // Frame
     blosc_set_timestamp(&current);
-    _nchunks = blosc2_schunk_update_chunk(schunk_cframe, insert_chunks[i], chunk, true);
+    _nchunks = blosc2_schunk_update_chunk(schunk_cframe, insert_chunks[i], chunk);
     blosc_set_timestamp(&last);
     free(chunk);
     if (_nchunks <= 0){

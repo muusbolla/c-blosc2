@@ -1604,14 +1604,11 @@ BLOSC_EXPORT int blosc2_schunk_append_chunk(blosc2_schunk *schunk, uint8_t *chun
   *
   * @param schunk The super-chunk where the chunk will be updated.
   * @param nchunk The position where the chunk will be updated.
-  * @param chunk The new @p chunk. If an internal copy is made, the @p chunk can be reused or
-  * freed if desired.
-  * @param copy Whether the chunk should be copied internally or can be used as-is.
-  *
+  * @param chunk The new @p chunk. An internal copy is always made.
   * @return The number of chunks in super-chunk. If some problem is
   * detected, this number will be negative.
   */
-BLOSC_EXPORT int blosc2_schunk_update_chunk(blosc2_schunk *schunk, int nchunk, uint8_t *chunk, bool copy);
+BLOSC_EXPORT int blosc2_schunk_update_chunk(blosc2_schunk *schunk, int nchunk, uint8_t *chunk);
 
 /**
  * @brief Insert a chunk at a specific position in a super-chunk.
