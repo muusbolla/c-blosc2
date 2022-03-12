@@ -2593,6 +2593,8 @@ XXH_PUBLIC_API XXH64_hash_t XXH64_hashFromCanonical(const XXH64_canonical_t* src
 #    include <arm_neon.h>
 #    undef inline
 #  endif
+#elif defined(__clang__)
+#include <x86intrin.h>
 #elif defined(_MSC_VER)
 #  include <intrin.h>
 #endif

@@ -17,7 +17,11 @@
 #include <assert.h>
 #include <math.h>
 
+#ifdef __clang__
 #include <x86intrin.h>
+#else
+#include <intrin.h>
+#endif
 
 #include "blosc2.h"
 #include "blosc-private.h"
@@ -1771,7 +1775,8 @@ static int blosc_d(
 /* Serial version for compression/decompression */
 static int serial_blosc(struct thread_context* thread_context) {
   blosc2_context* context = thread_context->parent_context;
-  int32_t j, bsize, leftoverblock;
+  int32_t j, bsize;
+  int32_t leftoverblock = 0;
   int32_t cbytes;
   int32_t ntbytes = (int32_t)context->output_bytes;
   int32_t* bstarts = context->bstarts;
@@ -1824,10 +1829,11 @@ static int serial_blosc(struct thread_context* thread_context) {
     int32_t i = 0;
     bsize = context->blocksize;
     for (; i < (nblocks - 1)/64; ++i) { // subtract 1 to handle case where there are full 64 blocks, but last one is leftover
-      uint64_t maskout = context->block_maskout[i]; 
-      if(maskout == 0xFFFFFFFFFFFFFFFFULL) { // skip 64 in a row
-        ntbytes += bsize * 64;
-      } else if (maskout == 0) { // decompress 64 in a row
+      uint64_t maskout = 0;
+      if (context->block_maskout != NULL) {
+          maskout = context->block_maskout[i];
+      }
+      if (maskout == 0) { // decompress 64 in a row
         for (j = 0; j < 64; j++) {
           int32_t nblock = i * 64 + j;
           /* Regular decompression */
@@ -1843,12 +1849,14 @@ static int serial_blosc(struct thread_context* thread_context) {
 
           ntbytes += cbytes;
         }
+      } else if (maskout == 0xFFFFFFFFFFFFFFFFULL) {  // skip 64 in a row
+          ntbytes += bsize * 64;
       } else {
-        int64_t num_skipped = _mm_popcnt_u64(maskout); // count the number of 1s (skipped blocks)
+        int64_t num_skipped = __builtin_popcountll(maskout); // count the number of 1s (skipped blocks)
         ntbytes += bsize * num_skipped; // pretend that we decompressed them all successfully
 
         maskout = ~maskout; // invert so that 1 = decompress, 0 = skip
-        j = _mm_tzcnt_64(maskout); // find the index of the first block to decompress
+        j = __builtin_ctzll(maskout);  // find the index of the first block to decompress
         do {
           int32_t nblock = i * 64 + j;
           /* Regular decompression */
@@ -1863,9 +1871,12 @@ static int serial_blosc(struct thread_context* thread_context) {
           }
 
           ntbytes += cbytes;
-
+#ifdef _blsr_u64
           maskout = _blsr_u64(maskout);
-          j = _mm_tzcnt_64(maskout); // find the index of the next block to decompress
+#else
+          maskout = maskout & ~(1ULL << j);
+#endif
+          j = __builtin_ctzll(maskout); // find the index of the next block to decompress
         } while (maskout != 0);
       }
     }
@@ -1873,19 +1884,20 @@ static int serial_blosc(struct thread_context* thread_context) {
     // maybe less than 64 bits in the maskout
     // maybe the very last block is smaller (leftover)
     int32_t remainingBlocks = nblocks - (i * 64);
-    uint64_t maskout = context->block_maskout[i];
+    uint64_t maskout = 0;
+    if (context->block_maskout != NULL) {
+        maskout = context->block_maskout[i];
+    }
+    leftoverblock = 0;
     
     // done this way to avoid overflow when remainingBlocks == 64
-    uint64_t remainingMask = ((1ULL << (remainingBlocks - 1)) - 1) | (1ULL << (remainingBlocks - 1)); 
-
-    if(maskout == remainingMask) { // skip all remaining
-      ntbytes += bsize * remainingBlocks;
-    } else if (maskout == 0) { // decompress all remaining
+    uint64_t remainingMask = ((1ULL << (remainingBlocks - 1)) - 1) | (1ULL << (remainingBlocks - 1));
+    maskout = maskout & remainingMask;
+    if (maskout == 0) { // decompress all remaining
       for (j = 0; j < remainingBlocks; j++) {
         int32_t nblock = i * 64 + j;
         /* Regular decompression */
         if (j == remainingBlocks - 1) { // handle very last block being smaller (leftover data)
-          leftoverblock = 0;
           if (leftover > 0) {
             bsize = leftover;
             leftoverblock = 1;
@@ -1904,18 +1916,24 @@ static int serial_blosc(struct thread_context* thread_context) {
 
         ntbytes += cbytes;
       }
+    } else if (maskout == remainingMask) {  // skip all remaining
+        ntbytes += bsize * remainingBlocks;
     } else {
-      int64_t num_skipped = _mm_popcnt_u64(maskout); // count the number of 1s (skipped blocks)
+      int64_t num_skipped = __builtin_popcountll(maskout); // count the number of 1s (skipped blocks)
       ntbytes += bsize * num_skipped; // pretend that we decompressed them all successfully
 
-      maskout = ~maskout; // invert so that 1 = decompress, 0 = skip
-      j = _mm_tzcnt_64(maskout); // find the index of the first block to decompress
+      maskout = remainingMask & ~maskout; // invert so that 1 = decompress, 0 = skip
+      j = __builtin_ctzll(maskout); // find the index of the first block to decompress
       do {
         int32_t nblock = i * 64 + j;
-        maskout = _blsr_u64(maskout);
+        __debugbreak();
+#ifdef _blsr_u64
+          maskout = _blsr_u64(maskout);
+#else
+          maskout = maskout & ~(1ULL << j);
+#endif
         
         if (maskout == 0) { // handle very last block being smaller (leftover data)
-          leftoverblock = 0;
           if (leftover > 0) {
             bsize = leftover;
             leftoverblock = 1;
@@ -1926,7 +1944,7 @@ static int serial_blosc(struct thread_context* thread_context) {
         // If memcpyed we don't have a bstarts section (because it is not needed)
         int32_t src_offset = memcpyed ?
             context->header_overhead + nblock * context->blocksize : sw32_(bstarts + nblock);
-        cbytes = blosc_d(thread_context, bsize, 0, memcpyed,
+        cbytes = blosc_d(thread_context, bsize, leftoverblock, memcpyed,
                       context->src, context->srcsize, src_offset, nblock,
                       context->dest, nblock * context->blocksize, tmp, tmp2);
         if (cbytes < 0) {
@@ -1935,53 +1953,9 @@ static int serial_blosc(struct thread_context* thread_context) {
 
         ntbytes += cbytes;
 
-        j = _mm_tzcnt_64(maskout); // find the index of the next block to decompress
+        j = __builtin_ctzll(maskout); // find the index of the next block to decompress
       } while (maskout != 0);
     }
-
-    // for (j = 0; j < nblocks - 1; j++) {
-    //   /* Regular decompression */
-    //   if (context->block_maskout != NULL && (context->block_maskout[j / 64] & (1ULL << (j % 64)))) {
-    //     // Do not decompress, but act as if we successfully decompressed everything
-    //     cbytes = bsize;
-    //   } else {
-    //     // If memcpyed we don't have a bstarts section (because it is not needed)
-    //     int32_t src_offset = memcpyed ?
-    //         context->header_overhead + j * context->blocksize : sw32_(bstarts + j);
-    //     cbytes = blosc_d(thread_context, bsize, 0, memcpyed,
-    //                   context->src, context->srcsize, src_offset, j,
-    //                   context->dest, j * context->blocksize, tmp, tmp2);
-    //     if (cbytes < 0) {
-    //       return cbytes;         /* error in blosc_d */
-    //     }
-    //   }
-
-    //   ntbytes += cbytes;
-    // }
-
-    leftoverblock = 0;
-    if (leftover > 0) {
-      bsize = leftover;
-      leftoverblock = 1;
-    }
-    /* Regular decompression */
-    if (context->block_maskout != NULL && (context->block_maskout[j / 64] & (1ULL << (j % 64)))) {
-      // Do not decompress, but act as if we successfully decompressed everything
-      cbytes = bsize;
-    } else {
-      // If memcpyed we don't have a bstarts section (because it is not needed)
-      int32_t src_offset = memcpyed ?
-          context->header_overhead + j * context->blocksize : sw32_(bstarts + j);
-      cbytes = blosc_d(thread_context, bsize, leftoverblock, memcpyed,
-                    context->src, context->srcsize, src_offset, j,
-                    context->dest, j * context->blocksize, tmp, tmp2);
-      if (cbytes < 0) {
-        return cbytes;         /* error in blosc_d */
-      }
-    }
-
-    ntbytes += cbytes;
-
     return ntbytes;
   }
 }
