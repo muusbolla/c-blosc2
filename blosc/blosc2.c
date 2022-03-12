@@ -1926,7 +1926,6 @@ static int serial_blosc(struct thread_context* thread_context) {
       j = __builtin_ctzll(maskout); // find the index of the first block to decompress
       do {
         int32_t nblock = i * 64 + j;
-        __debugbreak();
 #ifdef _blsr_u64
           maskout = _blsr_u64(maskout);
 #else
