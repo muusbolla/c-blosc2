@@ -1897,11 +1897,9 @@ static int serial_blosc(struct thread_context* thread_context) {
       for (j = 0; j < remainingBlocks; j++) {
         int32_t nblock = i * 64 + j;
         /* Regular decompression */
-        if (j == remainingBlocks - 1) { // handle very last block being smaller (leftover data)
-          if (leftover > 0) {
-            bsize = leftover;
-            leftoverblock = 1;
-          }
+        if (j == remainingBlocks - 1 && leftover > 0) {  // handle very last block being smaller (leftover data)
+          bsize = leftover;
+          leftoverblock = 1;
         }
         
         // If memcpyed we don't have a bstarts section (because it is not needed)
@@ -1918,6 +1916,9 @@ static int serial_blosc(struct thread_context* thread_context) {
       }
     } else if (maskout == remainingMask) {  // skip all remaining
         ntbytes += bsize * remainingBlocks;
+        if (leftover > 0) { // correct bytes for final skipped block being smaller
+            ntbytes += leftover - bsize;
+        }
     } else {
       int64_t num_skipped = __builtin_popcountll(maskout); // count the number of 1s (skipped blocks)
       ntbytes += bsize * num_skipped; // pretend that we decompressed them all successfully
@@ -1931,11 +1932,12 @@ static int serial_blosc(struct thread_context* thread_context) {
 #else
           maskout = maskout & ~(1ULL << j);
 #endif
-        
-        if (maskout == 0) { // handle very last block being smaller (leftover data)
-          if (leftover > 0) {
+        if (maskout == 0 && leftover > 0) { // this is our final iteration, handle leftover data
+          if (j == remainingBlocks - 1) {  // setup to process the leftover block
             bsize = leftover;
             leftoverblock = 1;
+          } else {
+              ntbytes += leftover - bsize; // correct bytes when skipping the leftover block
           }
         }
 
