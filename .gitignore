@@ -6,3 +6,4 @@ cmake-build-*
 blosc/config.h
 internal-complibs/zlib-ng-2.0.5/zconf.h
 internal-complibs/zlib-ng-2.0.5/zconf.h.included
+.vs/
