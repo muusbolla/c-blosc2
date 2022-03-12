@@ -3855,7 +3855,7 @@ int blosc2_ctx_get_dparams(blosc2_context *ctx, blosc2_dparams *dparams) {
 
 
 /* Set a maskout in decompression context */
-int blosc2_set_maskout(blosc2_context *ctx, bool *maskout, int nblocks) {
+int blosc2_set_maskout_bitmask(blosc2_context *ctx, uint64_t *maskout, int nblocks) {
 
   if (ctx->block_maskout != NULL) {
     // Get rid of a possible mask here
@@ -3863,31 +3863,51 @@ int blosc2_set_maskout(blosc2_context *ctx, bool *maskout, int nblocks) {
   }
   int nmaskoutbits = (nblocks + 63) & (-64); // round up to next multiple of 64
   int nmaskoutelems = nmaskoutbits / 64;
-  uint64_t *maskout_ = calloc(nmaskoutelems, 8);
+  int nbytes = nmaskoutelems * 8;
+  uint64_t* maskout_ = malloc(nbytes);
   BLOSC_ERROR_NULL(maskout_, BLOSC2_ERROR_MEMORY_ALLOC);
 
-  int i = 0;
-  int outIdx = 0;
-  for(; i < nblocks - 64; i += 64) {
-    uint64_t val = 0;
-    for(int j = 0; j < 64; ++j) {
-      val |= ((uint64_t)(maskout[i + j] != 0)) << j;
-    }
-    maskout_[outIdx] = val;
-    ++outIdx;
-  }
-  
-  uint64_t val2 = 0;
-  for(int j = 0; i + j < nblocks; ++j) {
-    val2 |= ((uint64_t)(maskout[i+j] != 0)) << j;
-  }
-  maskout_[outIdx] = val2;
-  
+  memcpy(maskout_, maskout, nbytes);
 
   ctx->block_maskout = maskout_;
   ctx->block_maskout_nitems = nblocks;
 
   return 0;
+}
+
+/* Set a maskout in decompression context */
+int blosc2_set_maskout(blosc2_context* ctx, bool* maskout, int nblocks) {
+    if (ctx->block_maskout != NULL) {
+        // Get rid of a possible mask here
+        free(ctx->block_maskout);
+    }
+    int nmaskoutbits = (nblocks + 63) & (-64);  // round up to next multiple of 64
+    int nmaskoutelems = nmaskoutbits / 64;
+    int nmaskoutbytes = nmaskoutelems * sizeof(uint64_t);
+    uint64_t* maskout_ = malloc(nmaskoutbytes);
+    BLOSC_ERROR_NULL(maskout_, BLOSC2_ERROR_MEMORY_ALLOC);
+
+    int i = 0;
+    int outIdx = 0;
+    for (; i < nblocks - 64; i += 64) {
+        uint64_t val = 0;
+        for (int j = 0; j < 64; ++j) {
+            val |= ((uint64_t) (maskout[i + j] != 0)) << j;
+        }
+        maskout_[outIdx] = val;
+        ++outIdx;
+    }
+
+    uint64_t val2 = 0;
+    for (int j = 0; i + j < nblocks; ++j) {
+        val2 |= ((uint64_t) (maskout[i + j] != 0)) << j;
+    }
+    maskout_[outIdx] = val2;
+
+    ctx->block_maskout = maskout_;
+    ctx->block_maskout_nitems = nblocks;
+
+    return 0;
 }
 
 

@@ -1080,8 +1080,29 @@ BLOSC_EXPORT int blosc2_ctx_get_dparams(blosc2_context *ctx, blosc2_dparams *dpa
  *
  * @param ctx The decompression context to update.
  *
- * @param maskout The boolean mask for the blocks where decompression
- * is to be avoided.
+ * @param maskout The bitmask for the blocks where decompression
+ * is to be avoided. The data will be copied internally.
+ *
+ * @remark The maskout is valid for contexts *only* meant for decompressing
+ * a chunk via #blosc2_decompress_ctx.  Once a call to #blosc2_decompress_ctx
+ * is done, this mask is reset so that next call to #blosc2_decompress_ctx
+ * will decompress the whole chunk.
+ *
+ * @param nblocks The number of blocks in maskout above.
+ *
+ * @return If success, a 0 values is returned.  An error is signaled with a
+ * negative int.
+ *
+ */
+BLOSC_EXPORT int blosc2_set_maskout_bitmask(blosc2_context *ctx, uint64_t *maskout, int nblocks);
+
+/**
+ * @brief Set a maskout so as to avoid decompressing specified blocks.
+ *
+ * @param ctx The decompression context to update.
+ *
+ * @param maskout A boolean array of the blocks where decompression is to be avoided.
+ * The data will be copied internally and translated into a bitmask.
  *
  * @remark The maskout is valid for contexts *only* meant for decompressing
  * a chunk via #blosc2_decompress_ctx.  Once a call to #blosc2_decompress_ctx
