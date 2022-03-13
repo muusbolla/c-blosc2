@@ -274,12 +274,12 @@ static uint8_t *get_match_32(uint8_t *ip, const uint8_t *ip_bound, const uint8_t
 static uint8_t* get_run_or_match(uint8_t* ip, uint8_t* ip_bound, const uint8_t* ref, bool run) {
   if (BLOSCLZ_UNLIKELY(run)) {
 #if defined(__AVX2__)
-    // Extensive experiments on AMD Ryzen3 say that regular get_run is faster
+    // TODO improve performance of run_32
+    // TODO try forcing aligned loads
     // ip = get_run_32(ip, ip_bound, ref);
-    ip = get_run(ip, ip_bound, ref);
+    ip = get_run_16(ip, ip_bound, ref);
 #elif defined(__SSE2__)
     ip = get_run_16(ip, ip_bound, ref);
-    //ip = get_run(ip, ip_bound, ref);
 #else
     ip = get_run(ip, ip_bound, ref);
 #endif
@@ -288,6 +288,8 @@ static uint8_t* get_run_or_match(uint8_t* ip, uint8_t* ip_bound, const uint8_t* 
 #if defined(__AVX2__)
     // Extensive experiments on AMD Ryzen3 say that regular get_match_16 is faster
     // ip = get_match_32(ip, ip_bound, ref);
+    // TODO improve performance of match_32
+    // TODO try forcing aligned loads
     ip = get_match_16(ip, ip_bound, ref);
 #elif defined(__SSE2__)
     ip = get_match_16(ip, ip_bound, ref);
