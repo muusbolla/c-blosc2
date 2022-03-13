@@ -33,7 +33,7 @@
         },
         {
           "name": "EXTRA_C_FLAGS",
-          "value": "/arch:AVX2 /U__PRFCHW__",
+          "value": "-march=native /U__PRFCHW__",
           "type": "STRING"
         }
       ],
@@ -67,7 +67,7 @@
         },
         {
           "name": "EXTRA_C_FLAGS",
-          "value": "/arch:AVX2 /U__PRFCHW__",
+          "value": "-march=native /U__PRFCHW__",
           "type": "STRING"
         }
       ],

@@ -325,6 +325,12 @@ endif()
 # flags
 # @TODO: set -Wall
 # @NOTE: -O3 is enabled in Release mode (CMAKE_BUILD_TYPE="Release")
+if(DEFINED EXTRA_C_FLAGS)
+if(NOT CMAKE_C_FLAGS)
+    set(CMAKE_C_FLAGS "")
+endif()
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXTRA_C_FLAGS}")
+endif()
 
 # Set the "-msse2" build flag only if the CMAKE_C_FLAGS is not already set.
 # Probably "-msse2" should be appended to CMAKE_C_FLAGS_RELEASE.
