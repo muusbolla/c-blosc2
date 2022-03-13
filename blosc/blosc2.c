@@ -1849,7 +1849,7 @@ static int serial_blosc(struct thread_context* thread_context) {
 
           ntbytes += cbytes;
         }
-      } else if (maskout == 0xFFFFFFFFFFFFFFFFULL) {  // skip 64 in a row
+      } else if (maskout == 0xFFFFFFFFFFFFFFFFULL) {  // skip 64 in a row. required due to undefined behavior of __builtin_ctzll with src=0
           ntbytes += bsize * 64;
       } else {
         int64_t num_skipped = __builtin_popcountll(maskout); // count the number of 1s (skipped blocks)
@@ -1914,7 +1914,7 @@ static int serial_blosc(struct thread_context* thread_context) {
 
         ntbytes += cbytes;
       }
-    } else if (maskout == remainingMask) {  // skip all remaining
+    } else if (maskout == remainingMask) {  // skip all remaining. required due to undefined behavior of __builtin_ctzll with src=0
         ntbytes += bsize * remainingBlocks;
         if (leftover > 0) { // correct bytes for final skipped block being smaller
             ntbytes += leftover - bsize;
