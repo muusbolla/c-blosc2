@@ -59,6 +59,64 @@
   v = (s * 2654435761U) >> (32U - h); \
 }
 
+// different compilers have different definitions for a similar intrinsic
+#ifndef BLOSC_CTZ32
+#if defined(__has_builtin) && __has_builtin(__builtin_ctz)
+#define BLOSC_CTZ32(x) __builtin_ctz(x) // tzcnt instruction
+#elif defined(_mm_tzcnt_32)
+#define BLOSC_CTZ32(x) _mm_tzcnt_32(x) // tzcnt instruction
+#elif defined(_tzcnt_u32)
+#define BLOSC_CTZ32(x) _tzcnt_u32(x) // tzcnt instruction
+#elif defined(_BitScanForward)
+// fallback to BSF instruction, should be good enough for our use cases
+// we won't encounter the undefined result when x == 0 with proper guarding
+static int BLOSC_CTZ32(unsigned int x) {
+    unsigned int i;
+    _BitScanForward(&i, x);
+    return (int)i;
+}
+#else
+// fallback loop implementation
+static int BLOSC_CTZ32(unsigned int x) {
+    int i = 0;
+    for (; i < 32; ++i) {
+        if (x & (1 << i)) {
+            break;
+        }
+    }
+    return i;
+}
+#endif
+#endif
+
+#ifndef BLOSC_CTZ64
+#if defined(__has_builtin) && __has_builtin(__builtin_ctzll)
+#define BLOSC_CTZ64(x) __builtin_ctzll(x)  // tzcnt instruction
+#elif defined(_mm_tzcnt_64)
+#define BLOSC_CTZ64(x) _mm_tzcnt_64(x)  // tzcnt instruction
+#elif defined(_tzcnt_u64)
+#define BLOSC_CTZ64(x) _tzcnt_u64(x)  // tzcnt instruction
+#elif defined(_BitScanForward)
+// fallback to BSF instruction, should be good enough for our use cases
+// we won't encounter the undefined result when x == 0 with proper guarding
+static uint64_t BLOSC_CTZ64(uint64_t x) {
+    uint64_t i;
+    _BitScanForward64(&i, x);
+    return (int64_t) i;
+}
+#else
+// fallback loop implementation
+static int64_t BLOSC_CTZ64(uint64_t x) {
+    int64_t i = 0;
+    for (; i < 64; ++i) {
+        if (x & (1ULL << i)) {
+            break;
+        }
+    }
+    return i;
+}
+#endif
+#endif
 
 #if defined(__AVX2__)
 static uint8_t *get_run_32(uint8_t *ip, const uint8_t *ip_bound, const uint8_t *ref) {
@@ -96,10 +154,10 @@ static uint8_t *get_run_16(uint8_t *ip, const uint8_t *ip_bound, const uint8_t *
     value = _mm_set1_epi8(x);
     value2 = _mm_loadu_si128((__m128i *)ref);
     cmp = _mm_cmpeq_epi8(value, value2);
-    if (_mm_movemask_epi8(cmp) != 0xFFFF) {
-      /* Return the byte that starts to differ */
-      while (*ref++ == x) ip++;
-      return ip;
+    int same = _mm_movemask_epi8(cmp);
+    if (same != 0xFFFF) {
+        /* Return the byte that starts to differ */
+        return ip + BLOSC_CTZ32(~same);
     }
     else {
       ip += sizeof(__m128i);
@@ -170,11 +228,11 @@ static uint8_t *get_match_16(uint8_t *ip, const uint8_t *ip_bound, const uint8_t
   while (ip < (ip_bound - sizeof(__m128i))) {
     value = _mm_loadu_si128((__m128i *) ip);
     value2 = _mm_loadu_si128((__m128i *) ref);
-    cmp = _mm_cmpeq_epi32(value, value2);
-    if (_mm_movemask_epi8(cmp) != 0xFFFF) {
+    cmp = _mm_cmpeq_epi8(value, value2);
+    int same = _mm_movemask_epi8(cmp);
+    if (same != 0xFFFF) {
       /* Return the byte that starts to differ */
-      while (*ref++ == *ip++) {}
-      return ip;
+        return ip + BLOSC_CTZ32(~same);
     }
     else {
       ip += sizeof(__m128i);
@@ -220,9 +278,8 @@ static uint8_t* get_run_or_match(uint8_t* ip, uint8_t* ip_bound, const uint8_t* 
     // ip = get_run_32(ip, ip_bound, ref);
     ip = get_run(ip, ip_bound, ref);
 #elif defined(__SSE2__)
-    // Extensive experiments on AMD Ryzen3 say that regular get_run is faster
-    // ip = get_run_16(ip, ip_bound, ref);
-    ip = get_run(ip, ip_bound, ref);
+    ip = get_run_16(ip, ip_bound, ref);
+    //ip = get_run(ip, ip_bound, ref);
 #else
     ip = get_run(ip, ip_bound, ref);
 #endif
