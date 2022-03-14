@@ -157,7 +157,7 @@ static uint8_t *get_run_16(uint8_t *ip, const uint8_t *ip_bound, const uint8_t *
     int same = _mm_movemask_epi8(cmp);
     if (same != 0xFFFF) {
         /* Return the byte that starts to differ */
-        return ip + BLOSC_CTZ32(~same);
+        return ip + BLOSC_CTZ32(~same) + 1;
     }
     else {
       ip += sizeof(__m128i);
@@ -232,7 +232,7 @@ static uint8_t *get_match_16(uint8_t *ip, const uint8_t *ip_bound, const uint8_t
     int same = _mm_movemask_epi8(cmp);
     if (same != 0xFFFF) {
       /* Return the byte that starts to differ */
-        return ip + BLOSC_CTZ32(~same);
+        return ip + BLOSC_CTZ32(~same) + 1;
     }
     else {
       ip += sizeof(__m128i);
