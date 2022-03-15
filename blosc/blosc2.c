@@ -3124,23 +3124,62 @@ static void t_blosc_do_job(void *ctxt)
 
   bool static_schedule = (!compress || memcpyed) && context->block_maskout == NULL;
   if (static_schedule) {
-      /* Blocks per thread */
-      tblocks = nblocks / context->nthreads;
-      leftover2 = nblocks % context->nthreads;
-      tblocks = (leftover2 > 0) ? tblocks + 1 : tblocks;
-      nblock_ = thcontext->tid * tblocks;
-      tblock = nblock_ + tblocks;
-      if (tblock > nblocks) {
-          tblock = nblocks;
-      }
+    /* Blocks per thread */
+    tblocks = nblocks / context->nthreads;
+    leftover2 = nblocks % context->nthreads;
+    tblocks = (leftover2 > 0) ? tblocks + 1 : tblocks;
+    nblock_ = thcontext->tid * tblocks;
+    tblock = nblock_ + tblocks;
+    if (tblock > nblocks) {
+        tblock = nblocks;
+    }
   }
   else {
     // Use dynamic schedule via a queue.  Get the next block.
-    pthread_mutex_lock(&context->count_mutex);
-    context->thread_nblock++;
-    nblock_ = context->thread_nblock;
-    pthread_mutex_unlock(&context->count_mutex);
     tblock = nblocks;
+    if (context->block_maskout == NULL) {
+      pthread_mutex_lock(&context->count_mutex);
+      context->thread_nblock++;
+      nblock_ = context->thread_nblock;
+      pthread_mutex_unlock(&context->count_mutex);
+    } else {
+      pthread_mutex_lock(&context->count_mutex);
+      nblock_ = context->thread_nblock + 1;
+      if (nblock_ < nblocks) {
+        // skip over masked out blocks
+        int startnblock = nblock_;
+        uint64_t dontSkipBlocksMask = ~context->block_maskout[nblock_ / 64];
+        uint64_t unprocessedBlocksMask = ~((1ULL << (nblock_ % 64)) - 1);
+        uint64_t remainingBlocksMask = dontSkipBlocksMask & unprocessedBlocksMask;
+        if (remainingBlocksMask != 0) {
+          nblock_ += BLOSC_CTZ64(remainingBlocksMask) - (nblock_ % 64);
+        } else {
+          nblock_ = (nblock_ + 63) & (-64);  // round up to next multiple of 64
+          while (nblock_ < nblocks) {
+            remainingBlocksMask = ~context->block_maskout[nblock_ / 64];
+            if (remainingBlocksMask != 0) {
+              nblock_ += BLOSC_CTZ64(remainingBlocksMask);
+              break;
+            }
+            nblock_ += 64;
+          }
+        }
+        if (nblock_ >= nblocks) {
+          nblock_ = nblocks;
+          //uint64_t lastBlockWasSkipped = context->block_maskout[(nblocks - 1) / 64]
+          //  & (1ULL << ((nblocks - 1) % 64));
+          //if (lastBlockWasSkipped) {
+          // to get here, we had to have skipped the last block
+            if (leftover > 0) {
+              context->output_bytes += leftover - bsize;  // compensate for last skipped block being smaller
+            }
+          //}
+        }
+        context->output_bytes += (nblock_ - startnblock) * bsize; // count skipped blocks as if they were fully decompressed
+        context->thread_nblock = nblock_;
+      }
+      pthread_mutex_unlock(&context->count_mutex);
+    }
   }
 
   /* Loop over blocks */
@@ -3183,18 +3222,12 @@ static void t_blosc_do_job(void *ctxt)
         cbytes = -1;
       }
       else {
-        if (context->block_maskout != NULL && (context->block_maskout[nblock_ / 64] & (1ULL << (nblock_ % 64)))) {
-          // Do not decompress, but act as if we successfully decompressed everything
-          cbytes = bsize;
-        } else {
-          // If memcpyed we don't have a bstarts section (because it is not needed)
-          int32_t src_offset = memcpyed ?
-              context->header_overhead + nblock_ * blocksize : sw32_(bstarts + nblock_);
-          cbytes = blosc_d(thcontext, bsize, leftoverblock, memcpyed,
-                          src, srcsize, src_offset, nblock_,
-                          dest, nblock_ * blocksize, tmp, tmp2);
-        }
-        
+        // If memcpyed we don't have a bstarts section (because it is not needed)
+        int32_t src_offset = memcpyed ?
+            context->header_overhead + nblock_ * blocksize : sw32_(bstarts + nblock_);
+        cbytes = blosc_d(thcontext, bsize, leftoverblock, memcpyed,
+                        src, srcsize, src_offset, nblock_,
+                        dest, nblock_ * blocksize, tmp, tmp2);
       }
     }
 
@@ -3242,9 +3275,46 @@ static void t_blosc_do_job(void *ctxt)
     }
     else {
       pthread_mutex_lock(&context->count_mutex);
-      context->thread_nblock++;
-      nblock_ = context->thread_nblock;
       context->output_bytes += cbytes;
+      if (context->block_maskout == NULL) {
+        context->thread_nblock++;
+        nblock_ = context->thread_nblock;
+      } else {
+        nblock_ = context->thread_nblock + 1;
+        if (nblock_ < nblocks) {
+          // skip over masked out blocks
+          int startnblock = nblock_;
+          uint64_t dontSkipBlocksMask = ~context->block_maskout[nblock_ / 64];
+          uint64_t unprocessedBlocksMask = ~((1ULL << (nblock_ % 64)) - 1);
+          uint64_t remainingBlocksMask = dontSkipBlocksMask & unprocessedBlocksMask;
+          if (remainingBlocksMask != 0) {
+            nblock_ += BLOSC_CTZ64(remainingBlocksMask) - (nblock_ % 64);
+          } else {
+            nblock_ = (nblock_ + 63) & (-64);  // round up to next multiple of 64
+            while (nblock_ < nblocks) {
+              remainingBlocksMask = ~context->block_maskout[nblock_ / 64];
+              if (remainingBlocksMask != 0) {
+                nblock_ += BLOSC_CTZ64(remainingBlocksMask);
+                break;
+              }
+              nblock_ += 64;
+            }
+          }
+          if (nblock_ >= nblocks) {
+            nblock_ = nblocks;
+            // to get here, the last block had to have been skipped
+            //uint64_t lastBlockWasSkipped = context->block_maskout[(nblocks - 1) / 64]
+            //  & (1ULL << ((nblocks - 1) % 64));
+            //if (lastBlockWasSkipped) {
+            if (leftover > 0) {
+              context->output_bytes += leftover - bsize;  // compensate for last skipped block being smaller
+            }
+            //}
+          }
+          context->output_bytes += (nblock_ - startnblock) * bsize; // count skipped blocks as if they were fully decompressed
+          context->thread_nblock = nblock_;
+        }
+      }
       pthread_mutex_unlock(&context->count_mutex);
     }
 
