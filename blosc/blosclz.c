@@ -19,6 +19,7 @@
 #include "blosclz.h"
 #include "fastcopy.h"
 #include "blosc2/blosc2-common.h"
+#include "bmi.h"
 
 
 /*
@@ -59,68 +60,6 @@
   v = (s * 2654435761U) >> (32U - h); \
 }
 
-// different compilers have different definitions for a similar intrinsic
-#ifndef BLOSC_CTZ32
-#if defined(__has_builtin) && __has_builtin(__builtin_ctz)
-#define BLOSC_CTZ32(x) __builtin_ctz(x) // clang/gcc builtin
-#elif defined(_mm_tzcnt_32)
-#define BLOSC_CTZ32(x) _mm_tzcnt_32(x) // generic tzcnt
-#elif defined(_tzcnt_u32)
-#define BLOSC_CTZ32(x) (int32_t)_tzcnt_u32((uint32_t)x) // intel tzcnt
-#elif defined(__tzcnt_u32)
-#define BLOSC_CTZ32(x) (int32_t)__tzcnt_u32((uint32_t)x) // AMD tzcnt
-#elif defined(_BitScanForward)
-// fallback to BSF instruction, should be good enough for our use cases
-// we won't encounter the undefined result when x == 0 with proper guarding
-static int BLOSC_CTZ32(unsigned int x) {
-    unsigned int i;
-    _BitScanForward(&i, x);
-    return (int)i;
-}
-#else
-// fallback loop implementation
-static int BLOSC_CTZ32(unsigned int x) {
-    int i = 0;
-    for (; i < 32; ++i) {
-        if (x & (1 << i)) {
-            break;
-        }
-    }
-    return i;
-}
-#endif
-#endif
-
-#ifndef BLOSC_CTZ64
-#if defined(__has_builtin) && __has_builtin(__builtin_ctzll)
-#define BLOSC_CTZ64(x) __builtin_ctzll(x)  // clang/gcc builtin
-#elif defined(_mm_tzcnt_64)
-#define BLOSC_CTZ64(x) _mm_tzcnt_64(x)  // generic tzcnt
-#elif defined(_tzcnt_u64)
-#define BLOSC_CTZ64(x) (int64_t)_tzcnt_u64((uint64_t) x) // intel tzcnt
-#elif defined(__tzcnt_u64)
-#define BLOSC_CTZ64(x) (int64_t)__tzcnt_u64((uint64_t) x) // AMD tzcnt
-#elif defined(_BitScanForward)
-// fallback to BSF instruction, should be good enough for our use cases
-// we won't encounter the undefined result when x == 0 with proper guarding
-static int64_t BLOSC_CTZ64(uint64_t x) {
-    uint64_t i;
-    _BitScanForward64(&i, x);
-    return (int64_t) i;
-}
-#else
-// fallback loop implementation
-static int64_t BLOSC_CTZ64(uint64_t x) {
-    int64_t i = 0;
-    for (; i < 64; ++i) {
-        if (x & (1ULL << i)) {
-            break;
-        }
-    }
-    return i;
-}
-#endif
-#endif
 
 #if defined(__AVX2__)
 static uint8_t *get_run_32(uint8_t *ip, const uint8_t *ip_bound, const uint8_t *ref) {
@@ -160,8 +99,8 @@ static uint8_t *get_run_16(uint8_t *ip, const uint8_t *ip_bound, const uint8_t *
     cmp = _mm_cmpeq_epi8(value, value2);
     int same = _mm_movemask_epi8(cmp);
     if (same != 0xFFFF) {
-        /* Return the byte that starts to differ */
-        return ip + BLOSC_CTZ32(~same) + 1;
+      /* Return the byte that starts to differ */
+      return ip + BLOSC_CTZ32(~same) + 1;
     }
     else {
       ip += sizeof(__m128i);
@@ -236,7 +175,7 @@ static uint8_t *get_match_16(uint8_t *ip, const uint8_t *ip_bound, const uint8_t
     int same = _mm_movemask_epi8(cmp);
     if (same != 0xFFFF) {
       /* Return the byte that starts to differ */
-        return ip + BLOSC_CTZ32(~same) + 1;
+      return ip + BLOSC_CTZ32(~same) + 1;
     }
     else {
       ip += sizeof(__m128i);

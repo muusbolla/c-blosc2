@@ -72,6 +72,8 @@
   #include "win32/pthread.c"
 #endif
 
+#include "bmi.h"
+
 /* Synchronization variables */
 
 /* Global context for non-contextual API */
@@ -1852,11 +1854,11 @@ static int serial_blosc(struct thread_context* thread_context) {
       } else if (maskout == 0xFFFFFFFFFFFFFFFFULL) {  // skip 64 in a row. required due to undefined behavior of __builtin_ctzll with src=0
           ntbytes += bsize * 64;
       } else {
-        int64_t num_skipped = __builtin_popcountll(maskout); // count the number of 1s (skipped blocks)
+        int64_t num_skipped = BLOSC_POPCNT64(maskout); // count the number of 1s (skipped blocks)
         ntbytes += bsize * num_skipped; // pretend that we decompressed them all successfully
 
         maskout = ~maskout; // invert so that 1 = decompress, 0 = skip
-        j = __builtin_ctzll(maskout);  // find the index of the first block to decompress
+        j = BLOSC_CTZ64(maskout);  // find the index of the first block to decompress
         do {
           int32_t nblock = i * 64 + j;
           /* Regular decompression */
@@ -1871,14 +1873,12 @@ static int serial_blosc(struct thread_context* thread_context) {
           }
 
           ntbytes += cbytes;
-#ifdef _blsr_u64
-          maskout = _blsr_u64(maskout);
-#elif defined(__blsr_u64)
-          maskout = __blsr_u64(maskout);
+#ifdef BLOSC_BLSR64
+          maskout = BLOSC_BLSR64(maskout);
 #else
           maskout = maskout & ~(1ULL << j);
 #endif
-          j = __builtin_ctzll(maskout); // find the index of the next block to decompress
+          j = BLOSC_CTZ64(maskout); // find the index of the next block to decompress
         } while (maskout != 0);
       }
     }
@@ -1922,17 +1922,15 @@ static int serial_blosc(struct thread_context* thread_context) {
             ntbytes += leftover - bsize;
         }
     } else {
-      int64_t num_skipped = __builtin_popcountll(maskout); // count the number of 1s (skipped blocks)
+      int64_t num_skipped = BLOSC_POPCNT64(maskout); // count the number of 1s (skipped blocks)
       ntbytes += bsize * num_skipped; // pretend that we decompressed them all successfully
 
       maskout = remainingMask & ~maskout; // invert so that 1 = decompress, 0 = skip
-      j = __builtin_ctzll(maskout); // find the index of the first block to decompress
+      j = BLOSC_CTZ64(maskout);           // find the index of the first block to decompress
       do {
         int32_t nblock = i * 64 + j;
-#ifdef _blsr_u64
-        maskout = _blsr_u64(maskout);
-#elif defined(__blsr_u64)
-        maskout = __blsr_u64(maskout);
+#ifdef BLOSC_BLSR64
+        maskout = BLOSC_BLSR64(maskout);
 #else
         maskout = maskout & ~(1ULL << j);
 #endif
@@ -1958,7 +1956,7 @@ static int serial_blosc(struct thread_context* thread_context) {
 
         ntbytes += cbytes;
 
-        j = __builtin_ctzll(maskout); // find the index of the next block to decompress
+        j = BLOSC_CTZ64(maskout); // find the index of the next block to decompress
       } while (maskout != 0);
     }
     return ntbytes;
