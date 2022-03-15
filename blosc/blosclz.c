@@ -66,7 +66,7 @@
 #elif defined(_mm_tzcnt_32)
 #define BLOSC_CTZ32(x) _mm_tzcnt_32(x) // tzcnt instruction
 #elif defined(_tzcnt_u32)
-#define BLOSC_CTZ32(x) _tzcnt_u32(x) // tzcnt instruction
+#define BLOSC_CTZ32(x) (int32_t)_tzcnt_u32((uint32_t)x) // tzcnt instruction
 #elif defined(_BitScanForward)
 // fallback to BSF instruction, should be good enough for our use cases
 // we won't encounter the undefined result when x == 0 with proper guarding
@@ -95,11 +95,11 @@ static int BLOSC_CTZ32(unsigned int x) {
 #elif defined(_mm_tzcnt_64)
 #define BLOSC_CTZ64(x) _mm_tzcnt_64(x)  // tzcnt instruction
 #elif defined(_tzcnt_u64)
-#define BLOSC_CTZ64(x) _tzcnt_u64(x)  // tzcnt instruction
+#define BLOSC_CTZ64(x) (int64_t)_tzcnt_u64((uint64_t) x)  // tzcnt instruction
 #elif defined(_BitScanForward)
 // fallback to BSF instruction, should be good enough for our use cases
 // we won't encounter the undefined result when x == 0 with proper guarding
-static uint64_t BLOSC_CTZ64(uint64_t x) {
+static int64_t BLOSC_CTZ64(uint64_t x) {
     uint64_t i;
     _BitScanForward64(&i, x);
     return (int64_t) i;
