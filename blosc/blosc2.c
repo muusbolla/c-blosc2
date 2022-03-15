@@ -3090,7 +3090,7 @@ static void t_blosc_do_job(void *ctxt)
   uint8_t* tmp3;
 
   /* Get parameters for this thread before entering the main loop */
-  blocksize = context->blocksize;
+  bsize = blocksize = context->blocksize;
   ebsize = blocksize + context->typesize * sizeof(int32_t);
   maxbytes = context->destsize;
   nblocks = context->nblocks;
