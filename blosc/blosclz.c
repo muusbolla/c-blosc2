@@ -62,11 +62,13 @@
 // different compilers have different definitions for a similar intrinsic
 #ifndef BLOSC_CTZ32
 #if defined(__has_builtin) && __has_builtin(__builtin_ctz)
-#define BLOSC_CTZ32(x) __builtin_ctz(x) // tzcnt instruction
+#define BLOSC_CTZ32(x) __builtin_ctz(x) // clang/gcc builtin
 #elif defined(_mm_tzcnt_32)
-#define BLOSC_CTZ32(x) _mm_tzcnt_32(x) // tzcnt instruction
+#define BLOSC_CTZ32(x) _mm_tzcnt_32(x) // generic tzcnt
 #elif defined(_tzcnt_u32)
-#define BLOSC_CTZ32(x) (int32_t)_tzcnt_u32((uint32_t)x) // tzcnt instruction
+#define BLOSC_CTZ32(x) (int32_t)_tzcnt_u32((uint32_t)x) // intel tzcnt
+#elif defined(__tzcnt_u32)
+#define BLOSC_CTZ32(x) (int32_t)__tzcnt_u32((uint32_t)x) // AMD tzcnt
 #elif defined(_BitScanForward)
 // fallback to BSF instruction, should be good enough for our use cases
 // we won't encounter the undefined result when x == 0 with proper guarding
@@ -91,11 +93,13 @@ static int BLOSC_CTZ32(unsigned int x) {
 
 #ifndef BLOSC_CTZ64
 #if defined(__has_builtin) && __has_builtin(__builtin_ctzll)
-#define BLOSC_CTZ64(x) __builtin_ctzll(x)  // tzcnt instruction
+#define BLOSC_CTZ64(x) __builtin_ctzll(x)  // clang/gcc builtin
 #elif defined(_mm_tzcnt_64)
-#define BLOSC_CTZ64(x) _mm_tzcnt_64(x)  // tzcnt instruction
+#define BLOSC_CTZ64(x) _mm_tzcnt_64(x)  // generic tzcnt
 #elif defined(_tzcnt_u64)
-#define BLOSC_CTZ64(x) (int64_t)_tzcnt_u64((uint64_t) x)  // tzcnt instruction
+#define BLOSC_CTZ64(x) (int64_t)_tzcnt_u64((uint64_t) x) // intel tzcnt
+#elif defined(__tzcnt_u64)
+#define BLOSC_CTZ64(x) (int64_t)__tzcnt_u64((uint64_t) x) // AMD tzcnt
 #elif defined(_BitScanForward)
 // fallback to BSF instruction, should be good enough for our use cases
 // we won't encounter the undefined result when x == 0 with proper guarding

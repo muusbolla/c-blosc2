@@ -1873,6 +1873,8 @@ static int serial_blosc(struct thread_context* thread_context) {
           ntbytes += cbytes;
 #ifdef _blsr_u64
           maskout = _blsr_u64(maskout);
+#elif defined(__blsr_u64)
+          maskout = __blsr_u64(maskout);
 #else
           maskout = maskout & ~(1ULL << j);
 #endif
@@ -1928,9 +1930,11 @@ static int serial_blosc(struct thread_context* thread_context) {
       do {
         int32_t nblock = i * 64 + j;
 #ifdef _blsr_u64
-          maskout = _blsr_u64(maskout);
+        maskout = _blsr_u64(maskout);
+#elif defined(__blsr_u64)
+        maskout = __blsr_u64(maskout);
 #else
-          maskout = maskout & ~(1ULL << j);
+        maskout = maskout & ~(1ULL << j);
 #endif
         if (maskout == 0 && leftover > 0) { // this is our final iteration, handle leftover data
           if (j == remainingBlocks - 1) {  // setup to process the leftover block
