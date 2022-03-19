@@ -73,6 +73,7 @@ if(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_GREATER 3.4)
   cmake_policy(SET CMP0063 NEW)
 endif()
 project(blosc LANGUAGES C)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # parse the full version numbers from blosc.h
 file(READ include/blosc2.h _blosc_h_contents)
