@@ -110,7 +110,7 @@ typedef void const *voidpc;
 typedef void       *voidpf;
 typedef void       *voidp;
 
-#ifdef HAVE_UNISTD_H    /* may be set to #if 1 by configure/cmake/etc */
+#if 1    /* was set to #if 1 by configure/cmake/etc */
 #  define Z_HAVE_UNISTD_H
 #endif
 

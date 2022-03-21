@@ -21,8 +21,8 @@
 #       build a lite version (only with BloscLZ and LZ4/LZ4HC) of the blosc library
 #   DEACTIVATE_AVX2: default OFF
 #       do not attempt to build with AVX2 instructions
-#   DEACTIVATE_ZLIB: default OFF
-#       do not include support for the Zlib library
+#   DEACTIVATE_ZLIB: default ON
+#       do not include support for the Zlib library - zlib has been RIPPED OUT MWA HAHAHA
 #   DEACTIVATE_ZSTD: default OFF
 #       do not include support for the Zstd library
 #   PREFER_EXTERNAL_LZ4: default OFF
@@ -108,7 +108,7 @@ option(BUILD_LITE
 option(DEACTIVATE_AVX2
     "Do not attempt to build with AVX2 instructions" OFF)
 option(DEACTIVATE_ZLIB
-    "Do not include support for the ZLIB library." OFF)
+    "Do not include support for the ZLIB library." ON)
 option(DEACTIVATE_ZSTD
     "Do not include support for the ZSTD library." OFF)
 option(DEACTIVATE_IPP
@@ -148,38 +148,7 @@ if(PREFER_EXTERNAL_LZ4)
 else()
     message(STATUS "Using LZ4 internal sources.")
 endif()
-
-if(NOT DEACTIVATE_ZLIB)
-    # import the ZLIB_ROOT environment variable to help finding the zlib library
-    if(PREFER_EXTERNAL_ZLIB)
-        set(ZLIB_ROOT $ENV{ZLIB_ROOT})
-        find_package(ZLIB)
-        if(NOT ZLIB_FOUND)
-            message(STATUS "No ZLIB found.  Using ZLIB-NG internal sources.")
-            set(HAVE_ZLIB_NG TRUE)
-        endif()
-    else()
-        message(STATUS "Using ZLIB-NG internal sources for ZLIB support.")
-        set(HAVE_ZLIB_NG TRUE)
-    endif()
-    # HAVE_ZLIB will be set to true because even if the library is not found,
-    # we will use the included sources for it
-    set(HAVE_ZLIB TRUE)
-endif()
-
-if(HAVE_ZLIB_NG)
-    set(ZLIB_NG_DIR "zlib-ng-2.0.5")  # update to the actual included version
-    add_definitions(-DZLIB_COMPAT)
-    set(ZLIB_COMPAT TRUE)
-    set(SKIP_INSTALL_ALL TRUE)
-    set(BUILD_SHARED_LIBS FALSE)
-    set(ZLIB_ENABLE_TESTS OFF)
-    add_subdirectory("internal-complibs/${ZLIB_NG_DIR}")
-
-    file(COPY
-            ${CMAKE_CURRENT_BINARY_DIR}/internal-complibs/${ZLIB_NG_DIR}/zconf.h
-            DESTINATION ${CMAKE_CURRENT_SOURCE_DIR}/internal-complibs/${ZLIB_NG_DIR}/)
-endif()
+set(HAVE_ZLIB FALSE)
 
 if(NOT DEACTIVATE_ZSTD)
     if(PREFER_EXTERNAL_ZSTD)

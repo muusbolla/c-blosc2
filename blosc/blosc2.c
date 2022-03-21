@@ -17,10 +17,10 @@
 #include <assert.h>
 #include <math.h>
 
-#ifdef __clang__
-#include <x86intrin.h>
-#else
+#ifdef _MSC_VER
 #include <intrin.h>
+#else
+#include <x86intrin.h>
 #endif
 
 #include "blosc2.h"
