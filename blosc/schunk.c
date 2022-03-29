@@ -286,7 +286,7 @@ blosc2_schunk* blosc2_schunk_copy(blosc2_schunk *schunk, blosc2_storage *storage
   // Copy vlmetalayers
   for (int nmeta = 0; nmeta < schunk->nvlmetalayers; ++nmeta) {
     uint8_t *content;
-    uint32_t content_len;
+    int32_t content_len;
     char* name = schunk->vlmetalayers[nmeta]->name;
     if (blosc2_vlmeta_get(schunk, name, &content, &content_len) < 0) {
       BLOSC_TRACE_ERROR("Can not get %s `vlmetalayer`.", name);

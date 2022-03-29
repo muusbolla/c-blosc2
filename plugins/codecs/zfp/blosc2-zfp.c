@@ -22,7 +22,7 @@ int blosc2_zfp_acc_compress(const uint8_t *input, int32_t input_len, uint8_t *ou
     int32_t *chunkshape = malloc(8 * sizeof(int32_t));
     int32_t *blockshape = malloc(8 * sizeof(int32_t));
     uint8_t *smeta;
-    uint32_t smeta_len;
+    int32_t smeta_len;
     if (blosc2_meta_get(cparams->schunk, "caterva", &smeta, &smeta_len) < 0) {
         printf("Blosc error");
         free(shape);
@@ -139,7 +139,7 @@ int blosc2_zfp_acc_decompress(const uint8_t *input, int32_t input_len, uint8_t *
     int32_t *chunkshape = malloc(8 * sizeof(int32_t));
     int32_t *blockshape = malloc(8 * sizeof(int32_t));
     uint8_t *smeta;
-    uint32_t smeta_len;
+    int32_t smeta_len;
     if (blosc2_meta_get(dparams->schunk, "caterva", &smeta, &smeta_len) < 0) {
         printf("Blosc error");
         free(shape);
@@ -234,7 +234,7 @@ int blosc2_zfp_prec_compress(const uint8_t *input, int32_t input_len, uint8_t *o
     int32_t *chunkshape = malloc(8 * sizeof(int32_t));
     int32_t *blockshape = malloc(8 * sizeof(int32_t));
     uint8_t *smeta;
-    uint32_t smeta_len;
+    int32_t smeta_len;
     if (blosc2_meta_get(cparams->schunk, "caterva", &smeta, &smeta_len) < 0) {
         printf("Blosc error");
         free(shape);
@@ -374,7 +374,7 @@ int blosc2_zfp_prec_decompress(const uint8_t *input, int32_t input_len, uint8_t 
     int32_t *chunkshape = malloc(8 * sizeof(int32_t));
     int32_t *blockshape = malloc(8 * sizeof(int32_t));
     uint8_t *smeta;
-    uint32_t smeta_len;
+    int32_t smeta_len;
     if (blosc2_meta_get(dparams->schunk, "caterva", &smeta, &smeta_len) < 0) {
         printf("Blosc error");
         free(shape);
@@ -496,7 +496,7 @@ int blosc2_zfp_rate_compress(const uint8_t *input, int32_t input_len, uint8_t *o
     int32_t *chunkshape = malloc(8 * sizeof(int32_t));
     int32_t *blockshape = malloc(8 * sizeof(int32_t));
     uint8_t *smeta;
-    uint32_t smeta_len;
+    int32_t smeta_len;
     if (blosc2_meta_get(cparams->schunk, "caterva", &smeta, &smeta_len) < 0) {
         printf("Blosc error");
         free(shape);
@@ -628,7 +628,7 @@ int blosc2_zfp_rate_decompress(const uint8_t *input, int32_t input_len, uint8_t 
     int32_t *chunkshape = malloc(8 * sizeof(int32_t));
     int32_t *blockshape = malloc(8 * sizeof(int32_t));
     uint8_t *smeta;
-    uint32_t smeta_len;
+    int32_t smeta_len;
     if (blosc2_meta_get(dparams->schunk, "caterva", &smeta, &smeta_len) < 0) {
         printf("Blosc error");
         free(shape);
