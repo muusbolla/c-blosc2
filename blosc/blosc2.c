@@ -25,6 +25,7 @@
 
 #include "blosc2.h"
 #include "blosc-private.h"
+#include "../plugins/codecs/zfp/blosc2-zfp.h"
 #include "frame.h"
 
 
@@ -1160,7 +1161,6 @@ static int blosc_c(struct thread_context* thread_context, int32_t bsize,
       /* cbytes should never be negative */
       return BLOSC2_ERROR_DATA;
     }
-
     if (cbytes == 0) {
       // When cbytes is 0, the compressor has not been able to compress anything
       cbytes = neblock;
@@ -1600,6 +1600,7 @@ static int blosc_d(
         return BLOSC2_ERROR_POSTFILTER;
       }
     }
+    context->zfp_cell_nitems = 0;
     return bsize_;
   }
 
@@ -1719,22 +1720,38 @@ static int blosc_d(
       }
   #endif /*  HAVE_ZSTD */
       else if (compformat == BLOSC_UDCODEC_FORMAT) {
-        for (int i = 0; i < g_ncodecs; ++i) {
-          if (g_codecs[i].compcode == context->compcode) {
-            blosc2_dparams dparams;
-            blosc2_ctx_get_dparams(context, &dparams);
-            nbytes = g_codecs[i].decoder(src,
-                                          cbytes,
-                                          _dest,
-                                          neblock,
-                                          context->compcode_meta,
-                                          &dparams,
-                                          context->src);
-            goto urcodecsuccess;
+        bool getcell = false;
+
+#if defined(HAVE_PLUGINS)
+        if ((context->compcode == BLOSC_CODEC_ZFP_FIXED_RATE) && (context->zfp_cell_nitems > 0)) {
+          nbytes = zfp_getcell(context, src, cbytes, _dest, neblock);
+          if (nbytes < 0) {
+            return BLOSC2_ERROR_DATA;
+          }
+          if (nbytes == context->zfp_cell_nitems * typesize) {
+            getcell = true;
           }
         }
-        BLOSC_TRACE_ERROR("User-defined compressor codec %d not found during decompression", context->compcode);
-        return BLOSC2_ERROR_CODEC_SUPPORT;
+#endif /* HAVE_PLUGINS */
+        if (!getcell) {
+          context->zfp_cell_nitems = 0;
+          for (int i = 0; i < g_ncodecs; ++i) {
+            if (g_codecs[i].compcode == context->compcode) {
+              blosc2_dparams dparams;
+              blosc2_ctx_get_dparams(context, &dparams);
+              nbytes = g_codecs[i].decoder(src,
+                                           cbytes,
+                                           _dest,
+                                           neblock,
+                                           context->compcode_meta,
+                                           &dparams,
+                                           context->src);
+              goto urcodecsuccess;
+            }
+          }
+          BLOSC_TRACE_ERROR("User-defined compressor codec %d not found during decompression", context->compcode);
+          return BLOSC2_ERROR_CODEC_SUPPORT;
+        }
       urcodecsuccess:
         ;
       }
@@ -1748,7 +1765,7 @@ static int blosc_d(
       }
 
       /* Check that decompressed bytes number is correct */
-      if (nbytes != neblock) {
+      if ((nbytes != neblock) && (context->zfp_cell_nitems == 0)) {
         return BLOSC2_ERROR_DATA;
       }
 
@@ -2973,6 +2990,13 @@ int _blosc_getitem(blosc2_context* context, blosc_header* header, const void* sr
     }
     bsize2 = stopb - startb;
 
+#if defined(HAVE_PLUGINS)
+    if (context->compcode == BLOSC_CODEC_ZFP_FIXED_RATE) {
+      context->zfp_cell_start = startb / context->typesize;
+      context->zfp_cell_nitems = nitems;
+    }
+#endif /* HAVE_PLUGINS */
+
     /* Do the actual data copy */
     // Regular decompression.  Put results in tmp2.
     // If the block is aligned and the worst case fits in destination, let's avoid a copy
@@ -2993,13 +3017,21 @@ int _blosc_getitem(blosc2_context* context, blosc_header* header, const void* sr
         return cbytes; // this is an error code
       }
     }
-
-    if (!get_single_block) {
+    if (context->zfp_cell_nitems > 0) {
+      if (cbytes == bsize2) {
+        memcpy((uint8_t *) dest, tmp2, (unsigned int) bsize2);
+      } else if (cbytes == context->blocksize) {
+        memcpy((uint8_t *) dest, tmp2 + context->zfp_cell_start * context->typesize, (unsigned int) bsize2);
+        cbytes = bsize2;
+      }
+    } else if (!get_single_block) {
       /* Copy to destination */
       memcpy((uint8_t *) dest + ntbytes, tmp2 + startb, (unsigned int) bsize2);
     }
     ntbytes += bsize2;
   }
+
+  context->zfp_cell_nitems = 0;
 
   return ntbytes;
 }
@@ -3849,6 +3881,8 @@ blosc2_context* blosc2_create_dctx(blosc2_dparams dparams) {
   context->block_maskout = NULL;
   context->block_maskout_nitems = 0;
   context->schunk = dparams.schunk;
+  context->zfp_cell_nitems = 0;
+  context->zfp_cell_start = 0;
 
   if (dparams.postfilter != NULL) {
     context->postfilter = dparams.postfilter;
