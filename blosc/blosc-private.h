@@ -61,7 +61,7 @@ static void endian_handler(bool little, void *dest, const void *pa, int size) {
   }
   else {
     uint8_t* pa_ = (uint8_t*)pa;
-    uint8_t* pa2_ = malloc((size_t)size);
+    uint8_t* pa2_ = (uint8_t*)malloc((size_t)size);
     switch (size) {
       case 8:
         pa2_[0] = pa_[7];

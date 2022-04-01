@@ -15,10 +15,17 @@
 
 #define NDMEAN_MAX_DIM 8
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 int ndmean_encoder(const uint8_t* input, uint8_t* output, int32_t length, uint8_t meta, blosc2_cparams* cparams);
 
 int ndmean_decoder(const uint8_t* input, uint8_t* output, int32_t length, uint8_t meta, blosc2_dparams* dparams);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif //CATERVA_NDMEAN_H
 
